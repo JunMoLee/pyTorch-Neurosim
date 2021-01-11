@@ -1,7 +1,7 @@
 import torch
 import torch.optim as optim
 from weightupdatecurve import Write
-from weightupdatecurve import ConWriteModule
+
 from weightupdatecurve import newwrite
 from getParam import getParamA
 from getParam import getParamB
@@ -86,13 +86,14 @@ class GpGnSGD(optim.Optimizer):
         self.GnB = getParamB(self.Gncs, self.GnA)
         self.GnAneg = getParamA(GnNLneg) * self.Gncs
         self.GnBneg = getParamB(self.Gncs, self.GnAneg)
+
         
         self.Gp = []
         self.Gn = []
         self.posref = []
         self.negref = []
         self.conductancebasedupdate = 1
-        
+         
         ## set different learning rate for each layers
 
         self.learningrate = [0.3/ batchsize, 0.15/ batchsize] ## assume that there is no bias
@@ -127,8 +128,8 @@ class GpGnSGD(optim.Optimizer):
                 '''
                 for idx, group in enumerate(p.data):
                     p.data[idx] = torch.ones_like(p.data[idx])*idx/400
-                
                 '''
+                
                 p.data.requires_grad_(True)
                 pdatacopy = p.data.clone()
                 Gpinit = torch.where(p.data>0,p.data,torch.zeros_like(p.data))*10
@@ -137,7 +138,7 @@ class GpGnSGD(optim.Optimizer):
                 self.Gn[idx1].append(Gninit)
                 self.posref[idx1].append(Gpinit)
                 self.negref[idx1].append(Gninit)
-
+        '''
         self.CWM = ConWriteModule(copy.deepcopy(self.Gp),copy.deepcopy(self.Gn))
         
         for idx1, group in enumerate(self.param_groups):
@@ -146,7 +147,7 @@ class GpGnSGD(optim.Optimizer):
             for idx2, p in enumerate(group['params']):
                 
                 self.CWM.setRef(self.Gp[idx1][idx2].clone().cpu(),self.Gn[idx1][idx2].clone().cpu(), idx1, idx2)
-                
+       '''         
                 
             
         
@@ -203,10 +204,10 @@ class GpGnSGD(optim.Optimizer):
                        
                         d_ppos =torch.where(d_p>0,d_p,torch.zeros_like(d_p))
                         d_pneg =torch.where( d_p<0, d_p,torch.zeros_like( d_p))
-
+                '''
                 if 1 :
                     self.CWM.setRef(self.Gp[idx1][idx2].clone().cpu(), self.Gn[idx1][idx2].clone().cpu(), idx1, idx2)
-                    
+                '''  
                 d_pneg = -d_pneg # for positive update
 
     
@@ -247,9 +248,9 @@ class GpGnSGD(optim.Optimizer):
                 ### reverse update
 
                 reverseupdate = iteration%2
-                normalupdate = 0
+                normalupdate = 0< iteration%8000 and iteration%8000<100
                 
-                if iteration%2 == 1: ## or use referenceperiod 
+                if iteration%2 == 10: ## or use referenceperiod 
                     self.negref[idx1][idx2] =self.Gn[idx1][idx2].clone().cpu()
                     self.posref[idx1][idx2] = self.Gp[idx1][idx2].clone().cpu()
 
@@ -257,30 +258,26 @@ class GpGnSGD(optim.Optimizer):
                 
 
                 if reverseupdate == 0 or normalupdate == 1:
-                    self.Gp[idx1][idx2] = Write(self.Gp[idx1][idx2].clone().cpu(), self.GpA, self.GpB, self.cellnumbers, d_pneg.clone().cpu(), self.Gpcs, self.learningrate[idx2])
+                    self.Gp[idx1][idx2] = Write(self.Gp[idx1][idx2].clone(), self.GpA, self.GpB, self.cellnumbers, d_pneg.clone().cpu(), self.Gpcs, self.learningrate[idx2])
                     
-                    self.Gn[idx1][idx2] =  Write(self.Gn[idx1][idx2].clone().cpu(), self.GnA, self.GnB, self.cellnumbers, d_ppos.clone().cpu(), self.Gncs, self.learningrate[idx2])
+                    self.Gn[idx1][idx2] =  Write(self.Gn[idx1][idx2].clone(), self.GnA, self.GnB, self.cellnumbers, d_ppos.clone().cpu(), self.Gncs, self.learningrate[idx2])
                     self.Gp[idx1][idx2] = torch.clamp(self.Gp[idx1][idx2], max=10)
                     self.Gn[idx1][idx2] = torch.clamp(self.Gn[idx1][idx2], max=10)
 
                 else :
 
                     # minus update
-                    self.Gp[idx1][idx2] = newwrite(self.Gp[idx1][idx2].clone().cpu(),self.negref[idx1][idx2],self.GpAneg, self.GpBneg, self.cellnumbers, -d_ppos.clone().cpu(), self.Gpcsrev, self.learningratereverse[idx2])
+                    self.Gp[idx1][idx2] = newwrite(self.Gp[idx1][idx2].clone(),self.negref[idx1][idx2],self.GpAneg, self.GpBneg, self.cellnumbers, -d_ppos.clone().cpu(), self.Gpcsrev, self.learningratereverse[idx2])
                     # self.refGn[idx1][idx2].cpu(),self.GpAneg,
                     # plus update
-                    self.Gn[idx1][idx2] =  newwrite(self.Gn[idx1][idx2].clone().cpu(),self.posref[idx1][idx2],  self.GnAneg, self.GnBneg, self.cellnumbers, -d_pneg.clone().cpu(), self.Gncsrev, self.learningratereverse[idx2])
+                    self.Gn[idx1][idx2] =  newwrite(self.Gn[idx1][idx2].clone(),self.posref[idx1][idx2],  self.GnAneg, self.GnBneg, self.cellnumbers, -d_pneg.clone().cpu(), self.Gncsrev, self.learningratereverse[idx2])
                     self.Gp[idx1][idx2] = torch.clamp(self.Gp[idx1][idx2],  min=0)
-                    self.Gn[idx1][idx2] = torch.clamp(self.Gn[idx1][idx2], min=0)                    
+                    self.Gn[idx1][idx2] = torch.clamp(self.Gn[idx1][idx2], min=0)
                     
 
 
- 
-                
-                p.data = (self.Gp[idx1][idx2]-self.Gn[idx1][idx2])/10
+                p.data = (self.Gp[idx1][idx2] - self.Gn[idx1][idx2])/10
                 p.data.requires_grad_(True)
-
-
 
         return loss
 
@@ -291,11 +288,11 @@ class GpGnSGD(optim.Optimizer):
         for idx1, group in enumerate(self.param_groups):
             
             for idx2, p in enumerate(group['params']):
-                pdatacopy = p.data.clone()
+                
   
-                posweight =torch.where(p.data>0,p.data,torch.zeros_like(p.data))
-      
-                negweight =-torch.where(pdatacopy<0,pdatacopy,torch.zeros_like(pdatacopy))
+                pdatacopy = p.data.clone()
+                posweight = torch.where(p.data>0,p.data,torch.zeros_like(p.data))
+                negweight = -torch.where(pdatacopy<0,pdatacopy,torch.zeros_like(pdatacopy))
 
 
                 ## ideal write
@@ -320,3 +317,5 @@ class GpGnSGD(optim.Optimizer):
             for idx2, p in enumerate(group['params']):
                 break
         
+
+
