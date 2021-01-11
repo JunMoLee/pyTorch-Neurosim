@@ -17,10 +17,9 @@ class linearfunction(torch.autograd.Function):
     @staticmethod
     def forward(self, input, weight):
         self.save_for_backward(input, weight)
-        
-        input = torch.round(input)
-        
-        output = input.mm(weight.t())
+        v= torch.ones_like(input)
+        input = torch.round(v+input) - v ## caution : 0.5 rounds to 0 so modified accordingly
+        output =  input.mm(weight.t())
         
 
         return output
@@ -93,7 +92,9 @@ class quantizelayerIH(torch.autograd.Function):
         
         ## sigmoid + quantize
         
-        convertedinput = nn.Sigmoid()(input)
+        
+        
+        convertedinput = nn.Sigmoid()( input)
 
         
         
@@ -122,8 +123,10 @@ class quantizelayerHO(torch.autograd.Function):
     @staticmethod
     def forward(self, input):
         input = quantize(input, quantizelayerHO.ADCbit, quantizelayerHO.neurons)
-        
+
+     
         ## sigmoid + quantize
+
         
         convertedinput = nn.Sigmoid()(input)
 
@@ -228,3 +231,4 @@ class Base(nn.Module):
             x=unitlayer(x)
 
         return x
+
